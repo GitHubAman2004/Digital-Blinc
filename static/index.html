@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AIOps Platform - Enterprise Infrastructure Monitor</title>
+  <!-- Google Fonts & FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/static/app.css">
+  <!-- Apache ECharts -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="logo-section">
+        <div class="logo-icon"><i class="fa-solid fa-square-poll-vertical"></i></div>
+        <span class="logo-text">AIOps Monitor</span>
+      </div>
+      
+      <div class="system-status">
+        <div class="status-row">
+          <span>Database</span>
+          <div class="pulse-dot" id="status-db"></div>
+        </div>
+        <div class="status-row">
+          <span>HPE OneView</span>
+          <div class="pulse-dot" id="status-oneview"></div>
+        </div>
+        <div class="status-row">
+          <span>Cisco APIC</span>
+          <div class="pulse-dot" id="status-apic"></div>
+        </div>
+      </div>
+      
+      <nav class="nav-menu">
+        <div class="nav-item active" id="nav-dashboard" onclick="switchTab('dashboard')">
+          <i class="fa-solid fa-gauge-high"></i>
+          <span>Dashboard Overview</span>
+        </div>
+        <div class="nav-item" id="nav-oneview" onclick="switchTab('oneview')">
+          <i class="fa-solid fa-server"></i>
+          <span>HPE OneView Compute</span>
+        </div>
+        <div class="nav-item" id="nav-apic" onclick="switchTab('apic')">
+          <i class="fa-solid fa-network-wired"></i>
+          <span>Cisco APIC Network</span>
+        </div>
+        <div class="nav-item" id="nav-alerts" onclick="switchTab('alerts')">
+          <i class="fa-solid fa-bell"></i>
+          <span>Alert Center</span>
+        </div>
+        <div class="nav-item" id="nav-sim" onclick="switchTab('sim')">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>Fault Injector</span>
+        </div>
+      </nav>
+      
+      <div class="sidebar-footer">
+        <span>AIOps Platform v1.0.0</span>
+      </div>
+    </aside>
+
+    <!-- Main Workspace Area -->
+    <main class="main-content">
+      <header class="header">
+        <h1 class="header-title" id="view-title">Unified Infrastructure Status</h1>
+        <div class="header-stats">
+          <div class="stat-pill" style="cursor: pointer;" onclick="switchTab('alerts')">
+            <i class="fa-solid fa-circle-exclamation" style="color: var(--color-red)"></i>
+            <span id="header-critical-count">0 Critical</span>
+          </div>
+          <div class="stat-pill" style="cursor: pointer;" onclick="switchTab('alerts')">
+            <i class="fa-solid fa-triangle-exclamation" style="color: var(--color-amber)"></i>
+            <span id="header-warning-count">0 Warning</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="view-container">
+        
+        <!-- ==================== Tab 1: Dashboard Overview ==================== -->
+        <section id="dashboard-view" class="tab-view active">
+          <!-- KPI Stats -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <span class="kpi-label">HPE Synergy Chassis</span>
+              <div class="kpi-value-row">
+                <span class="kpi-value" id="kpi-dash-enclosures">-</span>
+                <span class="kpi-badge success" id="kpi-dash-enclosures-status">OK</span>
+              </div>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Synergy Blade Servers</span>
+              <div class="kpi-value-row">
+                <span class="kpi-value" id="kpi-dash-servers">-</span>
+                <span class="kpi-badge success" id="kpi-dash-servers-status">OK</span>
+              </div>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Cisco Fabric Switches</span>
+              <div class="kpi-value-row">
+                <span class="kpi-value" id="kpi-dash-switches">-</span>
+                <span class="kpi-badge success" id="kpi-dash-switches-status">OK</span>
+              </div>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Active ACI Tenants</span>
+              <div class="kpi-value-row">
+                <span class="kpi-value" id="kpi-dash-tenants">-</span>
+                <span class="kpi-badge success">Active</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Two Column Main Stats -->
+          <div class="dashboard-grid">
+            <!-- Left: Quick Health Summary -->
+            <div class="panel">
+              <div class="panel-header">
+                <h3 class="panel-title"><i class="fa-solid fa-heartbeat"></i> Infrastructure Health Indices</h3>
+              </div>
+              <div style="display: flex; height: 100%; min-height: 250px;">
+                <div id="dash-oneview-health-chart" style="width: 50%; height: 100%;"></div>
+                <div id="dash-apic-health-chart" style="width: 50%; height: 100%;"></div>
+              </div>
+            </div>
+
+            <!-- Right: Active Alert Summary -->
+            <div class="panel">
+              <div class="panel-header">
+                <h3 class="panel-title"><i class="fa-solid fa-list-check"></i> High Priority Incidents</h3>
+                <button class="btn-small" onclick="switchTab('alerts')">View All</button>
+              </div>
+              <div class="alerts-list" id="dash-active-alerts-list">
+                <p class="text-secondary" style="font-size: 0.8rem; text-align: center; margin-top: 2rem;">No high priority alerts</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== Tab 2: HPE OneView Compute ==================== -->
+        <section id="oneview-view" class="tab-view">
+          <!-- KPI stats for OneView -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <span class="kpi-label">Active Power</span>
+              <div class="kpi-value-row">
+                <span class="kpi-value" id="kpi-ov-power">- W</span>
+                <span class="kpi-badge success">Stable</span>
+              </div>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Enclosure Temp</span>
+              <div class="kpi-value-row">
+                <span class="kpi-value" id="kpi-ov-temp">- °C</span>
+                <span class="kpi-badge success">Normal</span>
+              </div>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Storage Capacity</span>
+              <div class="kpi-value-row">
+                <span class="kpi-value" id="kpi-ov-storage">- TB</span>
+                <span class="kpi-badge success">Free</span>
+              </div>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Firmware Profiles</span>
+              <div class="kpi-value-row">
+                <span class="kpi-value" id="kpi-ov-profiles">-</span>
+                <span class="kpi-badge success">Assigned</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-grid">
+            <!-- Enclosures Grid Map -->
+            <div class="panel">
+              <div class="panel-header">
+                <h3 class="panel-title"><i class="fa-solid fa-cubes"></i> HPE Synergy 12000 Enclosure Grid</h3>
+                <span class="detail-label" style="font-size: 0.75rem;">Click a blade server to view details</span>
+              </div>
+              <div class="enclosures-container" id="ov-enclosures-rack">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+
+            <!-- Side analytics & Storage -->
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+              <!-- Storage Pools -->
+              <div class="panel" style="min-height: auto;">
+                <div class="panel-header">
+                  <h3 class="panel-title"><i class="fa-solid fa-server"></i> SAN Storage Pools</h3>
+                </div>
+                <div id="ov-storage-pools-list">
+                  <!-- Populated dynamically -->
+                </div>
+              </div>
+
+              <!-- Thermal & Power Analytics -->
+              <div class="panel">
+                <div class="panel-header">
+                  <h3 class="panel-title"><i class="fa-solid fa-chart-line"></i> Power & Thermal Trends</h3>
+                </div>
+                <div id="ov-telemetry-chart" style="width: 100%; height: 250px;"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== Tab 3: Cisco APIC Network ==================== -->
+        <section id="apic-view" class="tab-view">
+          <!-- KPI Stats -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <span class="kpi-label">Spine Switches</span>
+              <div class="kpi-value-row">
+                <span class="kpi-value" id="kpi-apic-spines">-</span>
+                <span class="kpi-badge success">Online</span>
+              </div>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Leaf Switches</span>
+              <div class="kpi-value-row">
+                <span class="kpi-value" id="kpi-apic-leafs">-</span>
+                <span class="kpi-badge success">Online</span>
+              </div>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Endpoints Count</span>
+              <div class="kpi-value-row">
+                <span class="kpi-value" id="kpi-apic-endpoints">-</span>
+                <span class="kpi-badge success">Connected</span>
+              </div>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Total EPGs</span>
+              <div class="kpi-value-row">
+                <span class="kpi-value" id="kpi-apic-epgs">-</span>
+                <span class="kpi-badge success">Configured</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-grid">
+            <!-- APIC Fabric Nodes & Topology -->
+            <div class="panel">
+              <div class="panel-header">
+                <h3 class="panel-title"><i class="fa-solid fa-circle-nodes"></i> Cisco ACI Fabric Nodes</h3>
+              </div>
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Node Name</th>
+                      <th>Role</th>
+                      <th>IP Address</th>
+                      <th>Health Score</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="apic-nodes-table-body">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+              
+              <!-- Leaf-Spine diagram visualization container or stats -->
+              <div class="panel-header" style="margin-top: 1.5rem; margin-bottom: 0.5rem; border-bottom: none;">
+                <h3 class="panel-title" style="font-size: 0.85rem;"><i class="fa-solid fa-arrows-split-up-and-left"></i> ACI Logical Tenant Architecture</h3>
+              </div>
+              <div class="table-wrapper">
+                <table class="data-table" style="font-size: 0.75rem;">
+                  <thead>
+                    <tr>
+                      <th>Tenant</th>
+                      <th>VRF</th>
+                      <th>Bridge Domain (BD)</th>
+                      <th>Endpoint Group (EPG)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="apic-logical-table-body">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Cisco Network Bandwidth and Faults -->
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+              <!-- Traffic Rate Analytics -->
+              <div class="panel">
+                <div class="panel-header">
+                  <h3 class="panel-title"><i class="fa-solid fa-chart-column"></i> Interface Bandwidth (bps)</h3>
+                </div>
+                <div id="apic-traffic-chart" style="width: 100%; height: 250px;"></div>
+              </div>
+
+              <!-- Switch Interfaces table -->
+              <div class="panel" style="min-height: auto;">
+                <div class="panel-header">
+                  <h3 class="panel-title"><i class="fa-solid fa-ethernet"></i> Active Interface Ports</h3>
+                </div>
+                <div class="table-wrapper" style="max-height: 180px; overflow-y: auto;">
+                  <table class="data-table" style="font-size: 0.75rem;">
+                    <thead>
+                      <tr>
+                        <th>Switch</th>
+                        <th>Port</th>
+                        <th>Status</th>
+                        <th>Inbound</th>
+                        <th>Outbound</th>
+                      </tr>
+                    </thead>
+                    <tbody id="apic-interfaces-table-body">
+                      <!-- Populated dynamically -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== Tab 4: Alert Center ==================== -->
+        <section id="alerts-view" class="tab-view">
+          <div class="panel">
+            <div class="panel-header">
+              <h3 class="panel-title"><i class="fa-solid fa-circle-exclamation"></i> Active Infrastructure Incidents</h3>
+              <div style="display: flex; gap: 0.5rem;">
+                <button class="btn-small" onclick="fetchAlerts()">Refresh Alerts</button>
+                <button class="btn-small" style="background-color: var(--color-emerald-bg); color: var(--color-emerald); border-color: rgba(16, 185, 129, 0.2);" onclick="resolveAllAlerts()">Acknowledge All</button>
+              </div>
+            </div>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Source</th>
+                    <th>Severity</th>
+                    <th>Entity Name</th>
+                    <th>Alert Message</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="alerts-center-table-body">
+                  <!-- Populated dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== Tab 5: Fault Injector ==================== -->
+        <section id="sim-view" class="tab-view">
+          <div class="panel">
+            <div class="panel-header">
+              <h3 class="panel-title"><i class="fa-solid fa-flask"></i> AIOps Operations Test Simulation Deck</h3>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.5rem; line-height: 1.4;">
+              Trigger hardware faults or network flaps to see how the dashboard components reflect anomalies. 
+              The scheduler runs collectors periodically to fetch data from mock API servers and updates the PostgreSQL database.
+            </p>
+            
+            <h4 class="panel-title" style="margin-bottom: 0.75rem; font-size: 0.85rem; text-transform: uppercase; color: var(--text-secondary);">HPE OneView Physical Failures</h4>
+            <div class="sim-grid" style="margin-bottom: 2rem;">
+              <div class="sim-card">
+                <span class="sim-title">Enclosure Fan Outage</span>
+                <span class="sim-desc">Simulates a complete fan assembly failure on Enclosure-01. Leads to severe blade heating.</span>
+                <button class="btn-trigger" id="sim-fan_failure-btn" onclick="toggleSimulation('fan_failure')">Inject Failure</button>
+              </div>
+              <div class="sim-card">
+                <span class="sim-title">Server Power Supply Failure</span>
+                <span class="sim-desc">Injects a redundant power supply failure on Blade Server 3 in Enclosure-01. Raises critical alert.</span>
+                <button class="btn-trigger" id="sim-psu_failure-btn" onclick="toggleSimulation('psu_failure')">Inject Failure</button>
+              </div>
+              <div class="sim-card">
+                <span class="sim-title">Storage Array Pool Degraded</span>
+                <span class="sim-desc">Degrades Storage Pool "SAN-Pool-01" by creating a raid failure. Shrinks free capacity.</span>
+                <button class="btn-trigger" id="sim-storage_failure-btn" onclick="toggleSimulation('storage_failure')">Inject Failure</button>
+              </div>
+              <div class="sim-card">
+                <span class="sim-title">Compute Thermal Warning</span>
+                <span class="sim-desc">Pushes server CPU temperatures above 85°C on Blade 2, Enclosure-02 due to thermal throttling.</span>
+                <button class="btn-trigger" id="sim-thermal_throttling-btn" onclick="toggleSimulation('thermal_throttling')">Inject Failure</button>
+              </div>
+            </div>
+
+            <h4 class="panel-title" style="margin-bottom: 0.75rem; font-size: 0.85rem; text-transform: uppercase; color: var(--text-secondary);">Cisco APIC ACI Network Failures</h4>
+            <div class="sim-grid">
+              <div class="sim-card">
+                <span class="sim-title">Leaf Switch Power Down</span>
+                <span class="sim-desc">Simulates complete power loss to Leaf Switch 102. Drops switch health index to 0.</span>
+                <button class="btn-trigger" id="sim-leaf_down-btn" onclick="toggleSimulation('leaf_down')">Inject Failure</button>
+              </div>
+              <div class="sim-card">
+                <span class="sim-title">Interface Link Flapping</span>
+                <span class="sim-desc">Simulates packet drop thresholds and connection flapping on Spine-201 Interface ethernet 1/5.</span>
+                <button class="btn-trigger" id="sim-interface_flap-btn" onclick="toggleSimulation('interface_flap')">Inject Failure</button>
+              </div>
+              <div class="sim-card">
+                <span class="sim-title">ACI Fault F1024 (EPG Packet Drops)</span>
+                <span class="sim-desc">Creates a logical networking fault on Tenant Prod EPG App-DB due to packet drops.</span>
+                <button class="btn-trigger" id="sim-epg_fault-btn" onclick="toggleSimulation('epg_fault')">Inject Failure</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- Hardware Details Modal -->
+  <div class="modal-overlay" id="hardware-modal" onclick="if(event.target===this) closeModal()">
+    <div class="modal-card">
+      <span class="modal-close" onclick="closeModal()">&times;</span>
+      <h3 class="modal-title" id="modal-server-title">Blade Server Details</h3>
+      <div id="modal-server-details">
+        <!-- Loaded dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
