@@ -18,7 +18,11 @@ sim_states = {
     'thermal_throttling': False,
     'leaf_down': False,
     'interface_flap': False,
-    'epg_fault': False
+    'epg_fault': False,
+    'firmware_mismatch': False,
+    'interconnect_uplink_down': False,
+    'apic_psu_failure': False,
+    'contract_deny_log': False
 }
 
 scmb_events = []  # State-Change Message Bus events
@@ -116,6 +120,154 @@ def mock_oneview_storage():
     return jsonify(pools)
 
 
+# 2a. /mock/oneview/rest/server-profiles
+@app.route('/mock/oneview/rest/server-profiles', methods=['GET'])
+def mock_oneview_server_profiles():
+    profiles = [
+        {'uri': '/rest/server-profiles/prof-001', 'name': 'ESXi-Prod-ClusterA', 'serverHardwareUri': '/rest/server-hardware/server1_1', 'status': 'OK', 'templateCompliance': 'Compliant', 'serverProfileTemplateUri': '/rest/server-profile-templates/ESXi-Production-Template', 'firmware': {'firmwareBaselineUri': '/rest/firmware-drivers/fw-001'}, 'description': 'Production ESXi cluster profile'},
+        {'uri': '/rest/server-profiles/prof-002', 'name': 'BareMetal-SAP-DB', 'serverHardwareUri': '/rest/server-hardware/server1_3', 'status': 'OK', 'templateCompliance': 'Compliant', 'serverProfileTemplateUri': '/rest/server-profile-templates/BareMetal-SAP-Template', 'firmware': {'firmwareBaselineUri': '/rest/firmware-drivers/fw-001'}, 'description': 'SAP HANA database server'},
+        {'uri': '/rest/server-profiles/prof-003', 'name': 'K8s-Dev-Worker', 'serverHardwareUri': '/rest/server-hardware/server1_4', 'status': 'OK', 'templateCompliance': 'Compliant', 'serverProfileTemplateUri': '/rest/server-profile-templates/K8s-Worker-Template', 'firmware': {'firmwareBaselineUri': '/rest/firmware-drivers/fw-002'}, 'description': 'Kubernetes development worker node'},
+        {'uri': '/rest/server-profiles/prof-004', 'name': 'ESXi-Stage-ClusterB', 'serverHardwareUri': '/rest/server-hardware/server2_1', 'status': 'OK', 'templateCompliance': 'Compliant', 'serverProfileTemplateUri': '/rest/server-profile-templates/ESXi-Staging-Template', 'firmware': {'firmwareBaselineUri': '/rest/firmware-drivers/fw-001'}, 'description': 'Staging ESXi cluster profile'},
+        {'uri': '/rest/server-profiles/prof-005', 'name': 'GPU-ML-Training', 'serverHardwareUri': '/rest/server-hardware/server1_2', 'status': 'OK', 'templateCompliance': 'Compliant', 'serverProfileTemplateUri': '/rest/server-profile-templates/GPU-Compute-Template', 'firmware': {'firmwareBaselineUri': '/rest/firmware-drivers/fw-003'}, 'description': 'Machine learning training node'},
+        {'uri': '/rest/server-profiles/prof-006', 'name': 'Docker-CI-Runner', 'serverHardwareUri': '/rest/server-hardware/server2_2', 'status': 'OK', 'templateCompliance': 'Compliant', 'serverProfileTemplateUri': '/rest/server-profile-templates/Container-Host-Template', 'firmware': {'firmwareBaselineUri': '/rest/firmware-drivers/fw-001'}, 'description': 'CI/CD Docker build runner'}
+    ]
+    if sim_states['firmware_mismatch']:
+        profiles[2]['templateCompliance'] = 'NonCompliant'
+        profiles[2]['status'] = 'Warning'
+        profiles[4]['templateCompliance'] = 'NonCompliant'
+        profiles[4]['status'] = 'Warning'
+    return jsonify({"members": profiles, "count": len(profiles)})
+
+# 2b. /mock/oneview/rest/server-hardware/<id>/utilization
+@app.route('/mock/oneview/rest/server-hardware/<id>/utilization', methods=['GET'])
+def mock_oneview_server_utilization(id):
+    import random
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    samples_count = 24
+    
+    cpu_samples = []
+    temp_samples = []
+    power_samples = []
+    
+    cpu_base = 40.0
+    temp_base = 35.0
+    power_base = 180.0
+    
+    if id == 'server1_3':
+        cpu_base = 80.0
+        temp_base = 48.0
+        power_base = 350.0
+    
+    if sim_states['thermal_throttling'] and id == 'server1_3':
+        cpu_base = 95.0
+        temp_base = 82.0
+        power_base = 390.0
+
+    for i in range(samples_count):
+        ts = (now - timedelta(minutes=5 * (samples_count - i))).strftime('%Y-%m-%dT%H:%M:%SZ')
+        cpu_samples.append([ts, round(cpu_base + random.uniform(-5.0, 5.0), 1)])
+        temp_samples.append([ts, round(temp_base + random.uniform(-2.0, 2.0), 1)])
+        power_samples.append([ts, int(power_base + random.uniform(-15.0, 15.0))])
+        
+    return jsonify({
+        "metricList": [
+            {"metricName": "CpuUtilization", "metricCapacity": 100.0, "metricSamples": cpu_samples},
+            {"metricName": "CpuAverageFreq", "metricCapacity": 3000.0, "metricSamples": []},
+            {"metricName": "AmbientTemperature", "metricCapacity": 40.0, "metricSamples": temp_samples},
+            {"metricName": "PowerConsumed", "metricCapacity": 500.0, "metricSamples": power_samples}
+        ]
+    })
+
+# 2c. /mock/oneview/rest/interconnects
+@app.route('/mock/oneview/rest/interconnects', methods=['GET'])
+def mock_oneview_interconnects():
+    ports = []
+    for p_num in range(1, 9):
+        p_status = 'Linked'
+        p_reason = 'None'
+        p_speed = '40Gbps' if p_num <= 2 else '10Gbps'
+        if p_num == 1 and sim_states['interconnect_uplink_down']:
+            p_status = 'Unlinked'
+            p_reason = 'No signal detected'
+        ports.append({
+            "portName": f"Port-{p_num}",
+            "status": p_status,
+            "portStatusReason": p_reason,
+            "portType": "Uplink" if p_num <= 2 else "Downlink",
+            "operationalSpeed": p_speed,
+            "neighbor": "Core-Switch-A" if p_num == 1 else "Core-Switch-B" if p_num == 2 else f"Blade-{p_num-2}"
+        })
+        
+    interconnects = [
+        {"uri": "/rest/interconnects/ic1_3", "name": "VC-Module-3", "enclosureUri": "/rest/enclosures/enc1", "interconnectIP": "10.1.10.31", "model": "Virtual Connect SE 40Gb F8", "state": "Configured", "status": "Warning" if sim_states['interconnect_uplink_down'] else "OK", "portCount": 8, "ports": ports},
+        {"uri": "/rest/interconnects/ic1_6", "name": "VC-Module-6", "enclosureUri": "/rest/enclosures/enc1", "interconnectIP": "10.1.10.32", "model": "Virtual Connect SE 40Gb F8", "state": "Configured", "status": "OK", "portCount": 8, "ports": [dict(p) for p in ports]},
+        {"uri": "/rest/interconnects/ic2_3", "name": "VC-Module-3", "enclosureUri": "/rest/enclosures/enc2", "interconnectIP": "10.1.10.33", "model": "Virtual Connect SE 40Gb F8", "state": "Configured", "status": "OK", "portCount": 8, "ports": [dict(p) for p in ports]},
+        {"uri": "/rest/interconnects/ic2_6", "name": "VC-Module-6", "enclosureUri": "/rest/enclosures/enc2", "interconnectIP": "10.1.10.34", "model": "Virtual Connect SE 40Gb F8", "state": "Configured", "status": "OK", "portCount": 8, "ports": [dict(p) for p in ports]}
+    ]
+    if sim_states['interconnect_uplink_down']:
+        interconnects[1]['ports'][0]['status'] = 'Linked'
+        
+    return jsonify({"members": interconnects, "count": len(interconnects)})
+
+# 2d. /mock/oneview/rest/interconnects/<id>/statistics
+@app.route('/mock/oneview/rest/interconnects/<id>/statistics', methods=['GET'])
+def mock_oneview_interconnect_statistics(id):
+    import random
+    port_stats = []
+    for p_num in range(1, 9):
+        rx_err = 0
+        if p_num == 1 and id == 'ic1_3' and sim_states['interconnect_uplink_down']:
+            rx_err = random.randint(1500, 5000)
+        port_stats.append({
+            "portName": f"Port-{p_num}",
+            "commonStatistics": {
+                "rfc": {
+                    "rxBytes": random.randint(10000000, 50000000),
+                    "txBytes": random.randint(10000000, 50000000),
+                    "rxPackets": random.randint(50000, 250000),
+                    "txPackets": random.randint(50000, 250000),
+                    "rxErrors": rx_err,
+                    "txErrors": 0
+                }
+            }
+        })
+    return jsonify({"portStatistics": port_stats})
+
+# 2e. /mock/oneview/rest/ethernet-networks
+@app.route('/mock/oneview/rest/ethernet-networks', methods=['GET'])
+def mock_oneview_ethernet_networks():
+    networks = [
+        {'uri': '/rest/ethernet-networks/net-001', 'name': 'Production-VLAN100', 'vlanId': 100, 'status': 'Active', 'ethernetNetworkType': 'Tagged', 'bandwidth': {'typicalBandwidth': 10000.0}, 'subnetUri': '10.1.100.0/24', 'purpose': 'Production'},
+        {'uri': '/rest/ethernet-networks/net-002', 'name': 'Management-VLAN10', 'vlanId': 10, 'status': 'Active', 'ethernetNetworkType': 'Tagged', 'bandwidth': {'typicalBandwidth': 1000.0}, 'subnetUri': '10.1.10.0/24', 'purpose': 'Management'},
+        {'uri': '/rest/ethernet-networks/net-003', 'name': 'vMotion-VLAN200', 'vlanId': 200, 'status': 'Active', 'ethernetNetworkType': 'Tagged', 'bandwidth': {'typicalBandwidth': 25000.0}, 'subnetUri': '10.1.200.0/24', 'purpose': 'vMotion'},
+        {'uri': '/rest/ethernet-networks/net-004', 'name': 'iSCSI-A-VLAN300', 'vlanId': 300, 'status': 'Active', 'ethernetNetworkType': 'Tagged', 'bandwidth': {'typicalBandwidth': 25000.0}, 'subnetUri': '10.1.300.0/24', 'purpose': 'iSCSI'},
+        {'uri': '/rest/ethernet-networks/net-005', 'name': 'iSCSI-B-VLAN301', 'vlanId': 301, 'status': 'Active', 'ethernetNetworkType': 'Tagged', 'bandwidth': {'typicalBandwidth': 25000.0}, 'subnetUri': '10.1.301.0/24', 'purpose': 'iSCSI'},
+        {'uri': '/rest/ethernet-networks/net-006', 'name': 'Dev-VLAN50', 'vlanId': 50, 'status': 'Active', 'ethernetNetworkType': 'Tagged', 'bandwidth': {'typicalBandwidth': 10000.0}, 'subnetUri': '10.1.50.0/24', 'purpose': 'Development'}
+    ]
+    return jsonify({"members": networks, "count": len(networks)})
+
+# 2f. /mock/oneview/rest/firmware-drivers
+@app.route('/mock/oneview/rest/firmware-drivers', methods=['GET'])
+def mock_oneview_firmware_drivers():
+    bundles = [
+        {'uri': '/rest/firmware-drivers/fw-001', 'name': 'Service Pack for ProLiant', 'version': '2025.03.01', 'isoFileName': 'SPP2025.03.01.iso', 'state': 'Active', 'bundleSize': 8500.0, 'releaseDate': '2025-03-15'},
+        {'uri': '/rest/firmware-drivers/fw-002', 'name': 'Service Pack for ProLiant', 'version': '2024.09.01', 'isoFileName': 'SPP2024.09.01.iso', 'state': 'Active', 'bundleSize': 8200.0, 'releaseDate': '2024-09-20'},
+        {'uri': '/rest/firmware-drivers/fw-003', 'name': 'Service Pack for ProLiant', 'version': '2024.06.01', 'isoFileName': 'SPP2024.06.01.iso', 'state': 'Active', 'bundleSize': 7900.0, 'releaseDate': '2024-06-10'},
+        {'uri': '/rest/firmware-drivers/fw-004', 'name': 'Service Pack for ProLiant', 'version': '2024.03.01', 'isoFileName': 'SPP2024.03.01.iso', 'state': 'Archived', 'bundleSize': 7600.0, 'releaseDate': '2024-03-05'}
+    ]
+    return jsonify({"members": bundles, "count": len(bundles)})
+
+# 2g. /mock/oneview/rest/alerts
+@app.route('/mock/oneview/rest/alerts', methods=['GET'])
+def mock_oneview_alerts():
+    try:
+        alerts = db.fetch_all("SELECT * FROM alerts WHERE source = 'oneview';")
+        return jsonify({"members": alerts, "count": len(alerts)})
+    except:
+        return jsonify({"members": [], "count": 0})
+
+
 # ==================== MOCK CISCO APIC API SIMULATOR ====================
 
 @app.route('/mock/apic/api/node/class/fabricNode.json', methods=['GET'])
@@ -178,6 +330,159 @@ def mock_apic_faults():
     return jsonify(faults)
 
 
+# 3a. /mock/apic/api/node/class/topSystem.json
+@app.route('/mock/apic/api/node/class/topSystem.json', methods=['GET'])
+def mock_apic_top_system():
+    imdata = [
+        {"topSystem": {"attributes": {"dn": "topology/pod-1/node-201/sys", "name": "Spine-201", "role": "spine", "serial": "PSU-SN-SP201-1", "version": "5.2(4d)", "systemUpTime": "120:14:32:05", "inbMgmtAddr": "10.0.0.201", "state": "in-service"}}},
+        {"topSystem": {"attributes": {"dn": "topology/pod-1/node-202/sys", "name": "Spine-202", "role": "spine", "serial": "PSU-SN-SP202-1", "version": "5.2(4d)", "systemUpTime": "120:14:30:12", "inbMgmtAddr": "10.0.0.202", "state": "in-service"}}},
+        {"topSystem": {"attributes": {"dn": "topology/pod-1/node-101/sys", "name": "Leaf-101", "role": "leaf", "serial": "PSU-SN-LF101-1", "version": "5.2(4d)", "systemUpTime": "45:02:11:54", "inbMgmtAddr": "10.0.0.101", "state": "in-service"}}},
+        {"topSystem": {"attributes": {"dn": "topology/pod-1/node-102/sys", "name": "Leaf-102", "role": "leaf", "serial": "PSU-SN-LF102-1", "version": "5.2(4d)", "systemUpTime": "12:21:40:15" if not sim_states['leaf_down'] else "00:00:00:00", "inbMgmtAddr": "10.0.0.102", "state": "in-service" if not sim_states['leaf_down'] else "out-of-service"}}},
+        {"topSystem": {"attributes": {"dn": "topology/pod-1/node-103/sys", "name": "Leaf-103", "role": "leaf", "serial": "PSU-SN-LF103-1", "version": "5.2(4d)", "systemUpTime": "45:02:10:44", "inbMgmtAddr": "10.0.0.103", "state": "in-service"}}}
+    ]
+    return jsonify({"imdata": imdata})
+
+# 3b. /mock/apic/api/node/class/fvCEp.json
+@app.route('/mock/apic/api/node/class/fvCEp.json', methods=['GET'])
+def mock_apic_learned_endpoints():
+    imdata = [
+        {"fvCEp": {"attributes": {"dn": "uni/tn-Production/ap-Web-App/epg-Prod-App-EPG/cep-00:50:56:A1:B2:01", "mac": "00:50:56:A1:B2:01", "ip": "10.1.100.11", "epgDn": "uni/tn-Production/ap-Web-App/epg-Prod-App-EPG", "lcC": "learned", "encap": "vlan-100"}}},
+        {"fvCEp": {"attributes": {"dn": "uni/tn-Production/ap-Web-App/epg-Prod-App-EPG/cep-00:50:56:A1:B2:02", "mac": "00:50:56:A1:B2:02", "ip": "10.1.100.12", "epgDn": "uni/tn-Production/ap-Web-App/epg-Prod-App-EPG", "lcC": "learned", "encap": "vlan-100"}}},
+        {"fvCEp": {"attributes": {"dn": "uni/tn-Production/ap-Web-App/epg-Prod-App-EPG/cep-00:50:56:A1:B2:03", "mac": "00:50:56:A1:B2:03", "ip": "10.1.100.13", "epgDn": "uni/tn-Production/ap-Web-App/epg-Prod-App-EPG", "lcC": "learned", "encap": "vlan-100"}}},
+        {"fvCEp": {"attributes": {"dn": "uni/tn-Production/ap-Web-App/epg-Prod-DB-EPG/cep-00:50:56:C3:D4:01", "mac": "00:50:56:C3:D4:01", "ip": "10.1.100.21", "epgDn": "uni/tn-Production/ap-Web-App/epg-Prod-DB-EPG", "lcC": "learned", "encap": "vlan-100"}}},
+        {"fvCEp": {"attributes": {"dn": "uni/tn-Production/ap-Web-App/epg-Prod-DB-EPG/cep-00:50:56:C3:D4:02", "mac": "00:50:56:C3:D4:02", "ip": "10.1.100.22", "epgDn": "uni/tn-Production/ap-Web-App/epg-Prod-DB-EPG", "lcC": "learned", "encap": "vlan-100"}}},
+        {"fvCEp": {"attributes": {"dn": "uni/tn-Production/ap-Web-App/epg-Prod-DB-EPG/cep-00:50:56:C3:D4:03", "mac": "00:50:56:C3:D4:03", "ip": "10.1.100.23", "epgDn": "uni/tn-Production/ap-Web-App/epg-Prod-DB-EPG", "lcC": "learned", "encap": "vlan-100"}}},
+        {"fvCEp": {"attributes": {"dn": "uni/tn-Development/ap-Dev-App/epg-Dev-App-EPG/cep-00:50:56:E5:F6:01", "mac": "00:50:56:E5:F6:01", "ip": "10.1.50.11", "epgDn": "uni/tn-Development/ap-Dev-App/epg-Dev-App-EPG", "lcC": "learned", "encap": "vlan-50"}}},
+        {"fvCEp": {"attributes": {"dn": "uni/tn-Development/ap-Dev-App/epg-Dev-App-EPG/cep-00:50:56:E5:F6:02", "mac": "00:50:56:E5:F6:02", "ip": "10.1.50.12", "epgDn": "uni/tn-Development/ap-Dev-App/epg-Dev-App-EPG", "lcC": "learned", "encap": "vlan-50"}}},
+        {"fvCEp": {"attributes": {"dn": "uni/tn-Development/ap-Dev-App/epg-Dev-App-EPG/cep-00:50:56:E5:F6:03", "mac": "00:50:56:E5:F6:03", "ip": "10.1.50.13", "epgDn": "uni/tn-Development/ap-Dev-App/epg-Dev-App-EPG", "lcC": "learned", "encap": "vlan-50"}}},
+        {"fvCEp": {"attributes": {"dn": "uni/tn-Shared-Services/ap-Services/epg-SharedSvc-DNS-EPG/cep-00:50:56:A7:B8:01", "mac": "00:50:56:A7:B8:01", "ip": "10.1.200.11", "epgDn": "uni/tn-Shared-Services/ap-Services/epg-SharedSvc-DNS-EPG", "lcC": "learned", "encap": "vlan-200"}}},
+        {"fvCEp": {"attributes": {"dn": "uni/tn-Shared-Services/ap-Services/epg-SharedSvc-DNS-EPG/cep-00:50:56:A7:B8:02", "mac": "00:50:56:A7:B8:02", "ip": "10.1.200.12", "epgDn": "uni/tn-Shared-Services/ap-Services/epg-SharedSvc-DNS-EPG", "lcC": "learned", "encap": "vlan-200"}}},
+        {"fvCEp": {"attributes": {"dn": "uni/tn-Shared-Services/ap-Services/epg-SharedSvc-DNS-EPG/cep-00:50:56:A7:B8:03", "mac": "00:50:56:A7:B8:03", "ip": "10.1.200.13", "epgDn": "uni/tn-Shared-Services/ap-Services/epg-SharedSvc-DNS-EPG", "lcC": "learned", "encap": "vlan-200"}}}
+    ]
+    if sim_states['leaf_down']:
+        imdata = [e for e in imdata if "A1:B2:03" not in e['fvCEp']['attributes']['mac'] and 
+                  "C3:D4:01" not in e['fvCEp']['attributes']['mac'] and 
+                  "C3:D4:02" not in e['fvCEp']['attributes']['mac'] and 
+                  "A7:B8:02" not in e['fvCEp']['attributes']['mac']]
+    return jsonify({"imdata": imdata})
+
+# 3c. /mock/apic/api/node/class/healthInst.json
+@app.route('/mock/apic/api/node/class/healthInst.json', methods=['GET'])
+def mock_apic_health_inst():
+    h_spine1 = 100
+    h_spine2 = 98
+    h_leaf1 = 97
+    h_leaf2 = 96
+    h_leaf3 = 99
+    
+    if sim_states['leaf_down']:
+        h_leaf2 = 0
+    if sim_states['interface_flap']:
+        h_leaf1 = 80
+        
+    imdata = [
+        {"healthInst": {"attributes": {"dn": "topology/pod-1/node-201/sys/health", "cur": str(h_spine1)}}},
+        {"healthInst": {"attributes": {"dn": "topology/pod-1/node-202/sys/health", "cur": str(h_spine2)}}},
+        {"healthInst": {"attributes": {"dn": "topology/pod-1/node-101/sys/health", "cur": str(h_leaf1)}}},
+        {"healthInst": {"attributes": {"dn": "topology/pod-1/node-102/sys/health", "cur": str(h_leaf2)}}},
+        {"healthInst": {"attributes": {"dn": "topology/pod-1/node-103/sys/health", "cur": str(h_leaf3)}}},
+        {"healthInst": {"attributes": {"dn": "uni/tn-Production/health", "cur": "85" if sim_states['epg_fault'] else "98"}}}
+    ]
+    return jsonify({"imdata": imdata})
+
+# 3d. /mock/apic/api/node/class/fabricHealthTotal.json
+@app.route('/mock/apic/api/node/class/fabricHealthTotal.json', methods=['GET'])
+def mock_apic_fabric_health_total():
+    score = 98
+    if sim_states['leaf_down']:
+        score = 78
+    elif sim_states['interface_flap'] or sim_states['epg_fault']:
+        score = 91
+    return jsonify({"imdata": [{"fabricHealthTotal": {"attributes": {"dn": "fabric/health", "cur": str(score)}}}]})
+
+# 3e. /mock/apic/api/node/class/ethpmPhysIf.json
+@app.route('/mock/apic/api/node/class/ethpmPhysIf.json', methods=['GET'])
+def mock_apic_ethpm_phys_if():
+    import random
+    st1 = 'up'
+    st2 = 'up'
+    
+    if sim_states['leaf_down']:
+        st2 = 'down'
+    if sim_states['interface_flap']:
+        st1 = 'up' if random.choice([True, False]) else 'down'
+        
+    imdata = [
+        {"ethpmPhysIf": {"attributes": {"dn": "topology/pod-1/node-101/sys/phys-[eth1/1]/phys", "operSt": st1, "operSpeed": "10G", "operDuplex": "full", "operStQual": "none" if st1=='up' else "link-flap"}}},
+        {"ethpmPhysIf": {"attributes": {"dn": "topology/pod-1/node-102/sys/phys-[eth1/1]/phys", "operSt": st2, "operSpeed": "10G", "operDuplex": "full", "operStQual": "none" if st2=='up' else "node-offline"}}},
+        {"ethpmPhysIf": {"attributes": {"dn": "topology/pod-1/node-103/sys/phys-[eth1/1]/phys", "operSt": "up", "operSpeed": "10G", "operDuplex": "full", "operStQual": "none"}}},
+        {"ethpmPhysIf": {"attributes": {"dn": "topology/pod-1/node-101/sys/phys-[eth1/2]/phys", "operSt": "up", "operSpeed": "40G", "operDuplex": "full", "operStQual": "none"}}},
+        {"ethpmPhysIf": {"attributes": {"dn": "topology/pod-1/node-102/sys/phys-[eth1/2]/phys", "operSt": st2, "operSpeed": "40G", "operDuplex": "full", "operStQual": "none" if st2=='up' else "node-offline"}}}
+    ]
+    return jsonify({"imdata": imdata})
+
+# 3f. /mock/apic/api/node/class/eqptPsu.json
+@app.route('/mock/apic/api/node/class/eqptPsu.json', methods=['GET'])
+def mock_apic_psu():
+    imdata = []
+    nodes = [201, 202, 101, 102, 103]
+    for n in nodes:
+        for psu_id in [1, 2]:
+            st = 'ok'
+            if sim_states['apic_psu_failure'] and n == 102 and psu_id == 2:
+                st = 'fail'
+            if sim_states['leaf_down'] and n == 102:
+                st = 'fail'
+            p_model = 'N9K-PAC-1200W' if n >= 200 else 'N9K-PAC-650W'
+            imdata.append({
+                "eqptPsu": {
+                    "attributes": {
+                        "dn": f"topology/pod-1/node-{n}/sys/ch/psu-{psu_id}",
+                        "id": f"PSU-{psu_id}",
+                        "operSt": st,
+                        "model": p_model,
+                        "ser": f"PSU-SN-{'SP' if n>=200 else 'LF'}{n}-{psu_id}"
+                    }
+                }
+            })
+    return jsonify({"imdata": imdata})
+
+# 3g. /mock/apic/api/node/class/eqptFan.json
+@app.route('/mock/apic/api/node/class/eqptFan.json', methods=['GET'])
+def mock_apic_fan():
+    imdata = []
+    nodes = [201, 202, 101, 102, 103]
+    for n in nodes:
+        for fan_id in [1, 2]:
+            st = 'ok'
+            if sim_states['leaf_down'] and n == 102:
+                st = 'unknown'
+            f_model = 'N9K-C9508-FAN' if n >= 200 else 'N9K-C93180-FAN'
+            imdata.append({
+                "eqptFan": {
+                    "attributes": {
+                        "dn": f"topology/pod-1/node-{n}/sys/ch/fan-{fan_id}",
+                        "id": f"FanTray-{fan_id}",
+                        "operSt": st,
+                        "model": f_model,
+                        "ser": f"FAN-SN-{'SP' if n>=200 else 'LF'}{n}-{fan_id}"
+                    }
+                }
+            })
+    return jsonify({"imdata": imdata})
+
+# 3h. /mock/apic/api/node/class/vzBrCP.json
+@app.route('/mock/apic/api/node/class/vzBrCP.json', methods=['GET'])
+def mock_apic_contracts():
+    imdata = [
+        {"vzBrCP": {"attributes": {"dn": "uni/tn-Production/brc-Web-to-App", "name": "Web-to-App", "scope": "tenant", "status": "active"}}},
+        {"vzBrCP": {"attributes": {"dn": "uni/tn-Production/brc-App-to-DB", "name": "App-to-DB", "scope": "tenant", "status": "active"}}},
+        {"vzBrCP": {"attributes": {"dn": "uni/tn-Shared-Services/brc-ICMP-Allow", "name": "ICMP-Allow", "scope": "global", "status": "active"}}},
+        {"vzBrCP": {"attributes": {"dn": "uni/tn-Shared-Services/brc-DNS-Allow", "name": "DNS-Allow", "scope": "global", "status": "active"}}}
+    ]
+    return jsonify({"imdata": imdata})
+
+
 # ==================== CLIENT API ENDPOINTS ====================
 
 @app.route('/api/metrics', methods=['GET'])
@@ -200,6 +505,19 @@ def get_metrics():
             encs = db.fetch_all("SELECT * FROM oneview_enclosures;")
             servers = db.fetch_all("SELECT * FROM oneview_server_hardware;")
             pools = db.fetch_all("SELECT * FROM oneview_storage_pools;")
+            
+            try:
+                profiles = db.fetch_all("SELECT * FROM oneview_server_profiles;")
+            except Exception:
+                profiles = []
+            try:
+                networks = db.fetch_all("SELECT * FROM oneview_networks;")
+            except Exception:
+                networks = []
+            try:
+                firmware = db.fetch_all("SELECT * FROM oneview_firmware;")
+            except Exception:
+                firmware = []
             
             # Calculate health index
             ov_unhealthy = len([e for e in encs if e['status'] != 'OK']) + len([s for s in servers if s['status'] != 'OK'])
@@ -252,12 +570,19 @@ def get_metrics():
                 if 'timestamp' in h:
                     h['ts'] = h.pop('timestamp')
 
+            profiles_compliant = len([p for p in profiles if p.get('compliance_state') == 'Compliant'])
+
             oneview_data = {
                 "enclosures": encs,
                 "blades": blades,
                 "storage_pools": pools,
                 "health_index": ov_health,
-                "telemetry_history": ov_history
+                "telemetry_history": ov_history,
+                "profiles": profiles,
+                "profiles_compliant": profiles_compliant,
+                "profiles_total": len(profiles),
+                "networks": networks,
+                "firmware": firmware
             }
 
             # Cisco APIC Database pull
@@ -265,9 +590,22 @@ def get_metrics():
             interfaces = db.fetch_all("SELECT * FROM apic_interfaces;")
             logical = db.fetch_all("SELECT * FROM apic_logical;")
             
+            try:
+                endpoints = db.fetch_all("SELECT * FROM apic_endpoints;")
+            except Exception:
+                endpoints = []
+            try:
+                contracts = db.fetch_all("SELECT * FROM apic_contracts;")
+            except Exception:
+                contracts = []
+            try:
+                equipment = db.fetch_all("SELECT * FROM apic_equipment;")
+            except Exception:
+                equipment = []
+
             # Fetch active endpoints count
-            endpoints_count = 14 + len([f for f in interfaces if f.get('status') == 'up' or f.get('oper_state') == 'up']) * 3
-            if sim_states['leaf_down']:
+            endpoints_count = len(endpoints) if endpoints else (14 + len([f for f in interfaces if f.get('status') == 'up' or f.get('oper_state') == 'up']) * 3)
+            if sim_states['leaf_down'] and not endpoints:
                 endpoints_count -= 6
 
             # Compute APIC Health
@@ -321,13 +659,20 @@ def get_metrics():
                 if 'timestamp' in h:
                     h['ts'] = h.pop('timestamp')
 
+            equipment_ok = len([e for e in equipment if e.get('status') == 'ok'])
+
             apic_data = {
                 "switches": switches,
                 "interfaces": interfaces,
                 "tenants": tenants,
                 "endpoints_count": endpoints_count,
+                "endpoints": endpoints[:10],
                 "health_index": apic_health,
-                "telemetry_history": apic_history
+                "telemetry_history": apic_history,
+                "contracts": contracts,
+                "equipment": equipment,
+                "equipment_ok": equipment_ok,
+                "equipment_total": len(equipment)
             }
 
         except Exception as e:
@@ -348,6 +693,82 @@ def get_server_detail(id):
     if server:
         return jsonify(server)
     return jsonify({"error": "Blade server not found"}), 404
+
+# ==================== ADDITIONAL CLIENT API ENDPOINTS ====================
+
+@app.route('/api/oneview/profiles', methods=['GET'])
+def get_oneview_profiles():
+    try:
+        profiles = db.fetch_all("SELECT * FROM oneview_server_profiles;")
+        return jsonify(profiles)
+    except Exception as e:
+        return jsonify([])
+
+@app.route('/api/oneview/interconnects', methods=['GET'])
+def get_oneview_interconnects():
+    try:
+        interconnects = db.fetch_all("SELECT * FROM oneview_interconnects;")
+        return jsonify(interconnects)
+    except Exception as e:
+        return jsonify([])
+
+@app.route('/api/oneview/networks', methods=['GET'])
+def get_oneview_networks():
+    try:
+        networks = db.fetch_all("SELECT * FROM oneview_networks;")
+        return jsonify(networks)
+    except Exception as e:
+        return jsonify([])
+
+@app.route('/api/oneview/firmware', methods=['GET'])
+def get_oneview_firmware():
+    try:
+        firmware = db.fetch_all("SELECT * FROM oneview_firmware;")
+        return jsonify(firmware)
+    except Exception as e:
+        return jsonify([])
+
+@app.route('/api/apic/endpoints', methods=['GET'])
+def get_apic_endpoints():
+    try:
+        epg = request.args.get('epg')
+        if epg:
+            endpoints = db.fetch_all("SELECT * FROM apic_endpoints WHERE epg = %s;", (epg,))
+        else:
+            endpoints = db.fetch_all("SELECT * FROM apic_endpoints;")
+        return jsonify(endpoints)
+    except Exception as e:
+        return jsonify([])
+
+@app.route('/api/apic/health', methods=['GET'])
+def get_apic_health():
+    try:
+        nodes = db.fetch_all("SELECT id, name, role, health_score FROM apic_fabric_nodes;")
+        fabric_health = int(sum(n['health_score'] for n in nodes) / len(nodes)) if nodes else 100
+        return jsonify({"nodes": nodes, "fabric_health": fabric_health})
+    except Exception as e:
+        return jsonify({"nodes": [], "fabric_health": 100})
+
+@app.route('/api/apic/contracts', methods=['GET'])
+def get_apic_contracts():
+    try:
+        contracts = db.fetch_all("SELECT * FROM apic_contracts;")
+        return jsonify(contracts)
+    except Exception as e:
+        return jsonify([])
+
+@app.route('/api/apic/equipment', methods=['GET'])
+def get_apic_equipment():
+    try:
+        node_id = request.args.get('node_id')
+        if node_id:
+            equipment = db.fetch_all("SELECT * FROM apic_equipment WHERE node_id = %s;", (node_id,))
+        else:
+            equipment = db.fetch_all("SELECT * FROM apic_equipment;")
+        return jsonify(equipment)
+    except Exception as e:
+        return jsonify([])
+
 
 @app.route('/api/alerts', methods=['GET'])
 def get_alerts():

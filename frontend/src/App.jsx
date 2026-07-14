@@ -9,6 +9,8 @@ export default function App() {
   const [alerts, setAlerts] = useState([]);
   const [sims, setSims] = useState({});
   const [modalBlade, setModalBlade] = useState(null);
+  const [endpointSearch, setEndpointSearch] = useState('');
+  const [endpointEpgFilter, setEndpointEpgFilter] = useState('all');
 
   const [chatInput, setChatInput] = useState('');
   const [chatHistory, setChatHistory] = useState([
@@ -72,9 +74,14 @@ export default function App() {
   /* ── Fetch ── */
   const poll = useCallback(async () => {
     try {
-      const [m, a] = await Promise.all([fetch('/api/metrics'), fetch('/api/alerts')]);
+      const [m, a, s] = await Promise.all([
+        fetch('/api/metrics'),
+        fetch('/api/alerts'),
+        fetch('/api/sim/status')
+      ]);
       if (m.ok) setMetrics(await m.json());
       if (a.ok) setAlerts(await a.json());
+      if (s.ok) setSims(await s.json());
     } catch (_) {}
   }, []);
 
@@ -200,9 +207,21 @@ export default function App() {
   const blades = ov.blades || [];
   const encs = ov.enclosures || [];
   const pools = ov.storage_pools || [];
+  const profiles = ov.profiles || [];
+  const profilesCompliant = ov.profiles_compliant || 0;
+  const profilesTotal = ov.profiles_total || 0;
+  const networks = ov.networks || [];
+  const firmwareList = ov.firmware || [];
+
   const sws = ap.switches || [];
   const ifaces = ap.interfaces || [];
   const tenants = ap.tenants || [];
+  const endpoints = ap.endpoints || [];
+  const endpointsCount = ap.endpoints_count || 0;
+  const contracts = ap.contracts || [];
+  const equipment = ap.equipment || [];
+  const equipmentOk = ap.equipment_ok || 0;
+  const equipmentTotal = ap.equipment_total || 0;
 
   const bladesOk = blades.filter(b => b.status === 'OK').length;
   const avgTemp = blades.length ? Math.round(blades.reduce((s, b) => s + (b.temperature || 0), 0) / blades.length) : 0;
@@ -302,10 +321,10 @@ export default function App() {
           {/* ═══ HPE ONEVIEW ═══ */}
           {tab === 'oneview' && (<>
             <div className="stat-grid">
-              <StatCard label="Enclosures" value={encs.length} unit="Synergy Frames" tag="Active" tagColor="green" />
               <StatCard label="Compute Blades" value={blades.length} unit={`${bladesOk}/${blades.length} OK`} tag={bladesOk === blades.length ? 'Healthy' : 'Degraded'} tagColor={bladesOk === blades.length ? 'green' : 'yellow'} />
-              <StatCard label="SCMB Event Buffer" value={scmbEvents.length} unit="messages" tag="Streaming" tagColor="blue" />
-              <StatCard label="Storage Pools" value={pools.length} unit="SAN Arrays" tag="Online" tagColor="green" />
+              <StatCard label="Server Profiles" value={`${profilesCompliant}/${profilesTotal}`} unit="Compliant Templates" tag={profilesCompliant === profilesTotal ? 'Compliant' : 'Mismatch'} tagColor={profilesCompliant === profilesTotal ? 'green' : 'yellow'} />
+              <StatCard label="Active VLANs" value={networks.length} unit="Networks Configured" tag="Active" tagColor="blue" />
+              <StatCard label="Firmware SPPs" value={firmwareList.length} unit="SPP ISO Bundles" tag="Up to Date" tagColor="green" />
             </div>
 
             <div className="row-2-wide">
@@ -481,15 +500,187 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            <div className="row-2-wide" style={{ marginTop: '12px' }}>
+              {/* Server Profiles Compliance */}
+              <div>
+                <div className="section-divider" style={{ padding: '0 0 6px 0' }}>Server Profile Compliance</div>
+                <div className="panel">
+                  <div className="panel-head">
+                    <span className="panel-title"><i className="fa-solid fa-id-card"></i> Profiles ({profilesCompliant}/{profilesTotal} Compliant)</span>
+                  </div>
+                  <div className="panel-body flush">
+                    <table className="dtable" style={{ fontSize: '11px' }}>
+                      <thead>
+                        <tr>
+                          <th>Profile Name</th>
+                          <th>Assigned Server</th>
+                          <th>Template</th>
+                          <th>Compliance</th>
+                          <th>Firmware Baseline</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {profiles.length === 0 ? (
+                          <tr><td colSpan="5" className="empty-state">No profiles found</td></tr>
+                        ) : (
+                          profiles.map((p, i) => (
+                            <tr key={i}>
+                              <td className="td-bold">{p.name}</td>
+                              <td className="td-mono">{p.server_hardware_id || 'Unassigned'}</td>
+                              <td>{p.template_name || '--'}</td>
+                              <td>
+                                <span className={`tag ${p.compliance_state === 'Compliant' ? 'green' : 'yellow'}`}>
+                                  {p.compliance_state}
+                                </span>
+                              </td>
+                              <td className="td-mono">{p.firmware_baseline || '--'}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Ethernet Networks */}
+              <div>
+                <div className="section-divider" style={{ padding: '0 0 6px 0' }}>Ethernet & SAN Networks</div>
+                <div className="panel">
+                  <div className="panel-head">
+                    <span className="panel-title"><i className="fa-solid fa-network-wired"></i> Network Configurations</span>
+                  </div>
+                  <div className="panel-body flush">
+                    <table className="dtable" style={{ fontSize: '11px' }}>
+                      <thead>
+                        <tr>
+                          <th>Network Name</th>
+                          <th>Type</th>
+                          <th>VLAN ID</th>
+                          <th>Typical BW</th>
+                          <th>Subnet</th>
+                          <th>Purpose</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {networks.length === 0 ? (
+                          <tr><td colSpan="6" className="empty-state">No networks configured</td></tr>
+                        ) : (
+                          networks.map((n, i) => (
+                            <tr key={i}>
+                              <td className="td-bold">{n.name}</td>
+                              <td><span className="tag blue">{n.type}</span></td>
+                              <td className="td-mono">{n.vlan_id || 'Untagged'}</td>
+                              <td className="td-mono">{n.bandwidth_typical ? `${n.bandwidth_typical/1000} Gbps` : '--'}</td>
+                              <td className="td-mono">{n.subnet || '--'}</td>
+                              <td><span className="tag green">{n.purpose || 'General'}</span></td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="row-2-wide" style={{ marginTop: '12px' }}>
+              {/* Interconnect Port Health */}
+              <div>
+                <div className="section-divider" style={{ padding: '0 0 6px 0' }}>Virtual Connect Interconnect Port Status</div>
+                <div className="panel">
+                  <div className="panel-head">
+                    <span className="panel-title"><i className="fa-solid fa-ethernet"></i> Interconnect Switch Modules</span>
+                  </div>
+                  <div className="panel-body flush" style={{ padding: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      {encs.map((enc, ei) => (
+                        <div key={ei} style={{ background: 'var(--bg-card-header)', borderRadius: '4px', padding: '8px' }}>
+                          <div style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>{enc.name} Modules</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', borderBottom: '1px solid var(--border-color)', paddingBottom: '2px' }}>
+                              <span>Module (Bay 3)</span>
+                              <span style={{ color: sims['interconnect_uplink_down'] ? 'var(--yellow)' : 'var(--green)' }}>
+                                {sims['interconnect_uplink_down'] ? 'Warning (Port 1 Down)' : 'Healthy'}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '3px', marginTop: '4px' }}>
+                              {Array.from({ length: 8 }, (_, pi) => {
+                                const isDown = pi === 0 && ei === 0 && sims['interconnect_uplink_down'];
+                                return (
+                                  <div key={pi} className={`bay-led ${isDown ? 'crit' : 'ok'}`} style={{ width: '18px', height: '18px', borderRadius: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: 'white', fontWeight: 'bold', cursor: 'help' }} title={`Port-${pi+1}: ${isDown ? 'Unlinked (No signal)' : 'Linked (40Gbps)'}`}>
+                                    {pi+1}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', borderBottom: '1px solid var(--border-color)', paddingBottom: '2px', marginTop: '6px' }}>
+                              <span>Module (Bay 6)</span>
+                              <span style={{ color: 'var(--green)' }}>Healthy</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '3px', marginTop: '4px' }}>
+                              {Array.from({ length: 8 }, (_, pi) => (
+                                <div key={pi} className="bay-led ok" style={{ width: '18px', height: '18px', borderRadius: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: 'white', fontWeight: 'bold' }}>
+                                  {pi+1}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Firmware Repository */}
+              <div>
+                <div className="section-divider" style={{ padding: '0 0 6px 0' }}>Appliance Firmware Bundle Repository (SPPs)</div>
+                <div className="panel">
+                  <div className="panel-head">
+                    <span className="panel-title"><i className="fa-solid fa-box-archive"></i> Firmware ISO Bundles</span>
+                  </div>
+                  <div className="panel-body flush">
+                    <table className="dtable" style={{ fontSize: '11px' }}>
+                      <thead>
+                        <tr>
+                          <th>SPP Version</th>
+                          <th>Release Date</th>
+                          <th>ISO Filename</th>
+                          <th>Size</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {firmwareList.length === 0 ? (
+                          <tr><td colSpan="5" className="empty-state">No firmware bundles registered</td></tr>
+                        ) : (
+                          firmwareList.map((f, i) => (
+                            <tr key={i}>
+                              <td className="td-bold">{f.name} {f.version}</td>
+                              <td className="td-mono">{f.release_date || '--'}</td>
+                              <td className="td-mono" style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{f.iso_file_name}</td>
+                              <td className="td-mono">{f.size_mb ? `${(f.size_mb/1024).toFixed(1)} GB` : '--'}</td>
+                              <td><span className={`tag ${f.status === 'Active' ? 'green' : 'gray'}`}>{f.status}</span></td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
           </>)}
 
           {/* ═══ CISCO APIC ═══ */}
           {tab === 'apic' && (<>
             <div className="stat-grid">
               <StatCard label="Fabric Switches" value={sws.length} unit={`${swOnline} healthy`} tag={swOnline === sws.length ? 'All Up' : 'Degraded'} tagColor={swOnline === sws.length ? 'green' : 'yellow'} />
-              <StatCard label="Interfaces" value={ifaces.length} unit={`${portsUp} up`} tag={portsUp === ifaces.length ? 'All Up' : `${ifaces.length - portsUp} down`} tagColor={portsUp === ifaces.length ? 'green' : 'red'} />
-              <StatCard label="Tenants" value={tenants.length} unit="Logical" tag="Deployed" tagColor="blue" />
-              <StatCard label="Fabric Health" value={`${sws.length > 0 ? Math.round((swOnline / sws.length) * 100) : 100}%`} unit="" tag={swOnline === sws.length ? 'Optimal' : 'Check'} tagColor={swOnline === sws.length ? 'green' : 'yellow'} />
+              <StatCard label="Learned Endpoints" value={endpointsCount} unit="IP/MAC Mappings" tag="Active" tagColor="blue" />
+              <StatCard label="Hardware Equipment" value={`${equipmentOk}/${equipmentTotal}`} unit="PSUs & Fans OK" tag={equipmentOk === equipmentTotal ? 'Healthy' : 'Failure'} tagColor={equipmentOk === equipmentTotal ? 'green' : 'red'} />
+              <StatCard label="Traffic Contracts" value={contracts.length} unit="Security Profiles" tag="Active" tagColor="green" />
             </div>
 
             {/* Switch table */}
@@ -609,6 +800,187 @@ export default function App() {
               </div>
             </div>
 
+            <div className="row-2-wide" style={{ marginTop: '12px' }}>
+              {/* Learned Endpoints */}
+              <div>
+                <div className="section-divider" style={{ padding: '0 0 6px 0' }}>Learned Endpoints (IP & MAC Mapping)</div>
+                <div className="panel">
+                  <div className="panel-head">
+                    <span className="panel-title"><i className="fa-solid fa-fingerprint"></i> Active Endpoints ({endpointsCount} total)</span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <input 
+                        type="text" 
+                        placeholder="Search MAC/IP..." 
+                        value={endpointSearch} 
+                        onChange={(e) => setEndpointSearch(e.target.value)} 
+                        style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: '3px', color: 'white', padding: '2px 6px', fontSize: '10px', width: '100px' }}
+                      />
+                      <select 
+                        value={endpointEpgFilter} 
+                        onChange={(e) => setEndpointEpgFilter(e.target.value)}
+                        style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: '3px', color: 'white', padding: '2px 4px', fontSize: '10px' }}
+                      >
+                        <option value="all">All EPGs</option>
+                        <option value="Prod-App-EPG">Prod-App</option>
+                        <option value="Prod-DB-EPG">Prod-DB</option>
+                        <option value="Dev-App-EPG">Dev-App</option>
+                        <option value="SharedSvc-DNS-EPG">SharedSvc-DNS</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="panel-body flush">
+                    <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                      <table className="dtable" style={{ fontSize: '11px' }}>
+                        <thead>
+                          <tr>
+                            <th>MAC Address</th>
+                            <th>IP Address</th>
+                            <th>EPG</th>
+                            <th>Encap</th>
+                            <th>Switch Port</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {endpoints.length === 0 ? (
+                            <tr><td colSpan="5" className="empty-state">No endpoints learned</td></tr>
+                          ) : (
+                            endpoints
+                              .filter(ep => {
+                                const matchesSearch = (ep.mac?.toLowerCase().includes(endpointSearch.toLowerCase()) || 
+                                                       ep.ip?.includes(endpointSearch));
+                                const matchesEpg = (endpointEpgFilter === 'all' || ep.epg === endpointEpgFilter);
+                                return matchesSearch && matchesEpg;
+                              })
+                              .map((ep, i) => (
+                                <tr key={i}>
+                                  <td className="td-mono td-bold">{ep.mac}</td>
+                                  <td className="td-mono">{ep.ip || '0.0.0.0'}</td>
+                                  <td><span className="tag blue">{ep.epg}</span></td>
+                                  <td className="td-mono" style={{ color: 'var(--text-muted)' }}>{ep.encap || 'vlan-100'}</td>
+                                  <td className="td-mono">{ep.node_id || 'leaf-101'}:{ep.interface || 'eth1/1'}</td>
+                                </tr>
+                              ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Equipment Health */}
+              <div>
+                <div className="section-divider" style={{ padding: '0 0 6px 0' }}>Fabric Node Hardware Equipment Health</div>
+                <div className="panel">
+                  <div className="panel-head">
+                    <span className="panel-title"><i className="fa-solid fa-server"></i> PSUs & Fans ({equipmentOk}/{equipmentTotal} Healthy)</span>
+                  </div>
+                  <div className="panel-body flush" style={{ padding: '12px', maxHeight: '250px', overflowY: 'auto' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {sws.map((sw, i) => {
+                        const swEq = equipment.filter(e => e.node_id === sw.id);
+                        return (
+                          <div key={i} style={{ background: 'var(--bg-card-header)', borderRadius: '4px', padding: '6px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold' }}>{sw.name}</span>
+                            <div style={{ display: 'flex', gap: '15px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>PSUs:</span>
+                                {swEq.filter(e => e.type === 'psu').map((p, pi) => {
+                                  const isPsuOk = p.status === 'ok' || p.status === 'online';
+                                  return (
+                                    <i key={pi} className={`fa-solid fa-plug-circle-bolt`} style={{ color: isPsuOk ? 'var(--green)' : 'var(--red)', fontSize: '11px', cursor: 'help' }} title={`${p.name}: ${p.status} (${p.model})`}></i>
+                                  );
+                                })}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Fans:</span>
+                                {swEq.filter(e => e.type === 'fan').map((f, fi) => {
+                                  const isFanOk = f.status === 'ok' || f.status === 'online';
+                                  return (
+                                    <i key={fi} className={`fa-solid fa-fan`} style={{ color: isFanOk ? 'var(--green)' : 'var(--red)', fontSize: '10px', cursor: 'help' }} title={`${f.name}: ${f.status}`}></i>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="row-2-wide" style={{ marginTop: '12px' }}>
+              {/* Traffic Contracts */}
+              <div>
+                <div className="section-divider" style={{ padding: '0 0 6px 0' }}>Security Traffic Contracts & Access Policies</div>
+                <div className="panel">
+                  <div className="panel-head">
+                    <span className="panel-title"><i className="fa-solid fa-shield-halved"></i> Tenant Contracts</span>
+                  </div>
+                  <div className="panel-body flush">
+                    <table className="dtable" style={{ fontSize: '11px' }}>
+                      <thead>
+                        <tr>
+                          <th>Contract</th>
+                          <th>Tenant</th>
+                          <th>Scope</th>
+                          <th>Filter Name</th>
+                          <th>Protocol</th>
+                          <th>Port</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {contracts.length === 0 ? (
+                          <tr><td colSpan="7" className="empty-state">No contracts loaded</td></tr>
+                        ) : (
+                          contracts.map((c, i) => (
+                            <tr key={i}>
+                              <td className="td-bold">{c.name}</td>
+                              <td><span className="tag blue">{c.tenant}</span></td>
+                              <td className="td-mono">{c.scope}</td>
+                              <td className="td-mono">{c.filter_name || 'Allow-Filter'}</td>
+                              <td className="td-mono">{c.protocol || 'tcp'}</td>
+                              <td className="td-mono">{c.dst_port || 'Any'}</td>
+                              <td><span className="tag green">{c.action || 'permit'}</span></td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Fabric Health Heatmap */}
+              <div>
+                <div className="section-divider" style={{ padding: '0 0 6px 0' }}>Fabric Node Health Distribution</div>
+                <div className="panel">
+                  <div className="panel-head">
+                    <span className="panel-title"><i className="fa-solid fa-fire-burner"></i> Node Heatmap</span>
+                  </div>
+                  <div className="panel-body flush" style={{ padding: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+                      {sws.map((sw, i) => {
+                        const score = sw.health_score || sw.health || 0;
+                        const scoreBg = score >= 90 ? 'rgba(46, 204, 113, 0.2)' : score >= 75 ? 'rgba(241, 196, 15, 0.2)' : 'rgba(231, 76, 60, 0.2)';
+                        const scoreBorder = score >= 90 ? 'var(--green)' : score >= 75 ? 'var(--yellow)' : 'var(--red)';
+                        return (
+                          <div key={i} style={{ border: `1px solid ${scoreBorder}`, background: scoreBg, borderRadius: '4px', padding: '10px 4px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+                            <span style={{ fontSize: '10px', fontWeight: 'bold' }}>{sw.name}</span>
+                            <span style={{ fontSize: '14px', fontWeight: 'bold', color: scoreBorder }}>{score}%</span>
+                            <span style={{ fontSize: '8px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{sw.role}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             </>)}
  
           {/* ═══ FAULT SIMULATOR ═══ */}
@@ -629,6 +1001,8 @@ export default function App() {
                     { k: 'psu_failure', t: 'Server PSU Failure', d: 'Redundant power supply failure on Blade 3, Enclosure-01. Raises critical alert.' },
                     { k: 'storage_failure', t: 'Storage Pool Degraded', d: 'RAID failure on SAN-Prod-Pool-01. Shrinks free capacity.' },
                     { k: 'thermal_throttling', t: 'Thermal Throttle Warning', d: 'CPU temps exceed 85°C on Blade 2, Enclosure-02.' },
+                    { k: 'firmware_mismatch', t: 'Firmware Compliance Mismatch', d: 'Marks server profiles as non-compliant with template baselines.' },
+                    { k: 'interconnect_uplink_down', t: 'Interconnect Uplink Down', d: 'Severs Port-1 link on Virtual Connect Switch Module 3.' }
                   ].map(s => (
                     <div className="sim-card" key={s.k}>
                       <span className="sim-title">{s.t}</span>
@@ -646,6 +1020,8 @@ export default function App() {
                     { k: 'leaf_down', t: 'Leaf Switch Power Down', d: 'Complete power loss to Leaf-102. Health drops to 0%.' },
                     { k: 'interface_flap', t: 'Interface Link Flapping', d: 'Packet drops and connection flapping on Spine-202 eth1/1.' },
                     { k: 'epg_fault', t: 'Fault F1024 (EPG Drops)', d: 'Logical fault on Tenant Production EPG Prod-DB-EPG.' },
+                    { k: 'apic_psu_failure', t: 'Leaf Switch PSU Failure', d: 'Fails redundant PSU-2 module on Leaf-102 switch hardware.' },
+                    { k: 'contract_deny_log', t: 'Contract Policy Deny Logs', d: 'Spikes traffic deny log events inside the ACI security filters.' }
                   ].map(s => (
                     <div className="sim-card" key={s.k}>
                       <span className="sim-title">{s.t}</span>

@@ -256,6 +256,82 @@ class DBManager:
                     );
                 """)
                 
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS oneview_server_profiles (
+                        id VARCHAR(100) PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        server_hardware_id VARCHAR(100) REFERENCES oneview_server_hardware(id) ON DELETE SET NULL,
+                        status VARCHAR(20) NOT NULL,
+                        compliance_state VARCHAR(30) NOT NULL,
+                        template_name VARCHAR(100),
+                        firmware_baseline VARCHAR(100),
+                        description TEXT
+                    );
+                """)
+                
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS oneview_networks (
+                        id VARCHAR(100) PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        type VARCHAR(20) NOT NULL,
+                        vlan_id INT,
+                        status VARCHAR(20) NOT NULL,
+                        bandwidth_typical REAL,
+                        subnet VARCHAR(50),
+                        purpose VARCHAR(50)
+                    );
+                """)
+                
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS oneview_firmware (
+                        id VARCHAR(100) PRIMARY KEY,
+                        name VARCHAR(200) NOT NULL,
+                        version VARCHAR(50) NOT NULL,
+                        release_date VARCHAR(30),
+                        iso_file_name VARCHAR(200),
+                        status VARCHAR(20) NOT NULL,
+                        size_mb REAL
+                    );
+                """)
+                
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS apic_endpoints (
+                        id VARCHAR(100) PRIMARY KEY,
+                        mac VARCHAR(20) NOT NULL,
+                        ip VARCHAR(50),
+                        epg VARCHAR(100) NOT NULL,
+                        interface VARCHAR(100),
+                        encap VARCHAR(20),
+                        node_id VARCHAR(100),
+                        status VARCHAR(20) NOT NULL
+                    );
+                """)
+                
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS apic_contracts (
+                        id VARCHAR(100) PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        tenant VARCHAR(100) NOT NULL,
+                        scope VARCHAR(30) NOT NULL,
+                        filter_name VARCHAR(100),
+                        protocol VARCHAR(20),
+                        dst_port VARCHAR(20),
+                        action VARCHAR(20) NOT NULL
+                    );
+                """)
+                
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS apic_equipment (
+                        id VARCHAR(100) PRIMARY KEY,
+                        node_id VARCHAR(100) REFERENCES apic_fabric_nodes(id) ON DELETE CASCADE,
+                        type VARCHAR(10) NOT NULL,
+                        name VARCHAR(100) NOT NULL,
+                        status VARCHAR(20) NOT NULL,
+                        model VARCHAR(100),
+                        serial_number VARCHAR(100)
+                    );
+                """)
+                
             else:
                 # SQLite Schema definition
                 cur.execute("PRAGMA foreign_keys = ON;")
@@ -379,6 +455,84 @@ class DBManager:
                         content TEXT NOT NULL,
                         category TEXT NOT NULL,
                         embedding TEXT
+                    );
+                """)
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS oneview_server_profiles (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        server_hardware_id TEXT,
+                        status TEXT NOT NULL,
+                        compliance_state TEXT NOT NULL,
+                        template_name TEXT,
+                        firmware_baseline TEXT,
+                        description TEXT,
+                        FOREIGN KEY (server_hardware_id) REFERENCES oneview_server_hardware(id) ON DELETE SET NULL
+                    );
+                """)
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS oneview_networks (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        type TEXT NOT NULL,
+                        vlan_id INTEGER,
+                        status TEXT NOT NULL,
+                        bandwidth_typical REAL,
+                        subnet TEXT,
+                        purpose TEXT
+                    );
+                """)
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS oneview_firmware (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        version TEXT NOT NULL,
+                        release_date TEXT,
+                        iso_file_name TEXT,
+                        status TEXT NOT NULL,
+                        size_mb REAL
+                    );
+                """)
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS apic_endpoints (
+                        id TEXT PRIMARY KEY,
+                        mac TEXT NOT NULL,
+                        ip TEXT,
+                        epg TEXT NOT NULL,
+                        interface TEXT,
+                        encap TEXT,
+                        node_id TEXT,
+                        status TEXT NOT NULL
+                    );
+                """)
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS apic_contracts (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        tenant TEXT NOT NULL,
+                        scope TEXT NOT NULL,
+                        filter_name TEXT,
+                        protocol TEXT,
+                        dst_port TEXT,
+                        action TEXT NOT NULL
+                    );
+                """)
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS apic_equipment (
+                        id TEXT PRIMARY KEY,
+                        node_id TEXT,
+                        type TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        model TEXT,
+                        serial_number TEXT,
+                        FOREIGN KEY (node_id) REFERENCES apic_fabric_nodes(id) ON DELETE CASCADE
                     );
                 """)
 

@@ -125,6 +125,81 @@ class OneViewCollector:
                     ('enclosure', 'all', 'power_watts', total_power, ts_str)
                 )
 
+            # --- Server Profiles ---
+            try:
+                resp = self.session.get(f"{self.base_url}/rest/server-profiles")
+                profiles = resp.json().get('members', resp.json()) if resp.ok else []
+                if isinstance(profiles, dict): profiles = profiles.get('members', [])
+                for p in profiles:
+                    pid = p.get('uri', '').split('/')[-1] or p.get('name', '').replace(' ', '-').lower()
+                    hw_id = (p.get('serverHardwareUri') or '').split('/')[-1] or None
+                    db.execute_query(
+                        """INSERT INTO oneview_server_profiles (id, name, server_hardware_id, status, compliance_state, template_name, firmware_baseline, description)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                        ON CONFLICT (id) DO UPDATE SET name=%s, server_hardware_id=%s, status=%s, compliance_state=%s, template_name=%s, firmware_baseline=%s, description=%s""",
+                        (pid, p.get('name',''), hw_id, p.get('status','Unknown'),
+                         p.get('templateCompliance','Unknown'),
+                         (p.get('serverProfileTemplateUri') or '').split('/')[-1],
+                         (p.get('firmware',{}).get('firmwareBaselineUri') or '').split('/')[-1],
+                         p.get('description',''),
+                         p.get('name',''), hw_id, p.get('status','Unknown'),
+                         p.get('templateCompliance','Unknown'),
+                         (p.get('serverProfileTemplateUri') or '').split('/')[-1],
+                         (p.get('firmware',{}).get('firmwareBaselineUri') or '').split('/')[-1],
+                         p.get('description',''))
+                    )
+                    if p.get('templateCompliance') == 'NonCompliant':
+                        self.evaluate_alert('oneview', pid, p.get('name',''), 'Warning',
+                            f"Server profile '{p.get('name','')}' is non-compliant with its template")
+                    else:
+                        self.evaluate_alert('oneview', pid, p.get('name',''), 'OK', '')
+            except Exception as e:
+                print(f"OneView Collector: Error collecting server profiles: {e}")
+
+            # --- Ethernet Networks ---
+            try:
+                resp = self.session.get(f"{self.base_url}/rest/ethernet-networks")
+                networks = resp.json().get('members', resp.json()) if resp.ok else []
+                if isinstance(networks, dict): networks = networks.get('members', [])
+                for n in networks:
+                    nid = n.get('uri', '').split('/')[-1] or n.get('name', '').replace(' ', '-').lower()
+                    db.execute_query(
+                        """INSERT INTO oneview_networks (id, name, type, vlan_id, status, bandwidth_typical, subnet, purpose)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                        ON CONFLICT (id) DO UPDATE SET name=%s, type=%s, vlan_id=%s, status=%s, bandwidth_typical=%s, subnet=%s, purpose=%s""",
+                        (nid, n.get('name',''), n.get('ethernetNetworkType','Ethernet'),
+                         n.get('vlanId', 0), n.get('status','Unknown'),
+                         n.get('bandwidth',{}).get('typicalBandwidth', 0),
+                         n.get('subnetUri',''), n.get('purpose','General'),
+                         n.get('name',''), n.get('ethernetNetworkType','Ethernet'),
+                         n.get('vlanId', 0), n.get('status','Unknown'),
+                         n.get('bandwidth',{}).get('typicalBandwidth', 0),
+                         n.get('subnetUri',''), n.get('purpose','General'))
+                    )
+            except Exception as e:
+                print(f"OneView Collector: Error collecting networks: {e}")
+
+            # --- Firmware Drivers ---
+            try:
+                resp = self.session.get(f"{self.base_url}/rest/firmware-drivers")
+                firmware = resp.json().get('members', resp.json()) if resp.ok else []
+                if isinstance(firmware, dict): firmware = firmware.get('members', [])
+                for f_item in firmware:
+                    fid = f_item.get('uri', '').split('/')[-1] or f_item.get('version', 'unknown')
+                    db.execute_query(
+                        """INSERT INTO oneview_firmware (id, name, version, release_date, iso_file_name, status, size_mb)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s)
+                        ON CONFLICT (id) DO UPDATE SET name=%s, version=%s, release_date=%s, iso_file_name=%s, status=%s, size_mb=%s""",
+                        (fid, f_item.get('name',''), f_item.get('version',''),
+                         f_item.get('releaseDate',''), f_item.get('isoFileName',''),
+                         f_item.get('state','Unknown'), f_item.get('bundleSize', 0),
+                         f_item.get('name',''), f_item.get('version',''),
+                         f_item.get('releaseDate',''), f_item.get('isoFileName',''),
+                         f_item.get('state','Unknown'), f_item.get('bundleSize', 0))
+                    )
+            except Exception as e:
+                print(f"OneView Collector: Error collecting firmware: {e}")
+
             print("OneView Collector: Infrastructure metrics refreshed successfully.")
             return True
 
